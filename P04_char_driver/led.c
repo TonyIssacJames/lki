@@ -21,7 +21,9 @@ static struct class *cl;	// Global variable for the device class
 static ssize_t gpio_read(struct file* F, char *buf, size_t count, loff_t *f_pos)
 {
 	unsigned char temp; 
-	//TODO 1: Get the led status in temp 
+	//TODO 1: Get the led status in temp
+	temp = gpio_get_value(GPIO_NUMBER);
+	
 	if (copy_to_user(buf, &temp, 1))
 	{
 		return -EFAULT;
@@ -37,10 +39,11 @@ static ssize_t gpio_write(struct file* F, const char *buf, size_t count, loff_t 
 	{
 		return -EFAULT;
 	}
-
-	printk(KERN_INFO "Executing WRITE.\n");
+		
+	printk(KERN_INFO "Executing WRITE. temp=%d\n",temp);
 	// TODO 2: Switch On the LED for value of '1' and switch it off for value of '0'
-
+	gpio_set_value(GPIO_NUMBER, temp);
+	
 	return count;
 }
 

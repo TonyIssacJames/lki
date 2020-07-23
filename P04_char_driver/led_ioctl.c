@@ -32,6 +32,14 @@ static int gpio_close(struct inode *inode, struct file *file)
 
 static long gpio_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
+	unsigned int temp;
+	/*safety check - check if type and ord*/
+	if(_IOC_TYPE(cmd) != GPIO_DRV_MAGIC)
+		return -ENOTTY;
+
+	if(_IOC_NR(cmd) > GPIO_DRV_MAX_NR)
+		return -ENOTTY;
+	
 	switch (cmd)
 	{
 		case GPIO_SELECT_LED:
@@ -39,6 +47,22 @@ static long gpio_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			break;
 
 		// TODO 1: Add the code for setting & getting the LED status
+		case GPIO_SET_LED:
+			printk(KERN_INFO "Executing WRITE. arg=%d\n",(int)arg);
+			// TODO 2: Switch On the LED for value of '1' and switch it off for value of '0'
+			gpio_set_value(gpio_num, arg);
+			break;
+
+		case GPIO_GET_LED:
+			temp = gpio_get_value(gpio_num);
+			printk(KERN_INFO "Executing READ. temp=%d\n",temp);
+	
+			if (copy_to_user((void *)arg, &temp, 4))
+			{
+				return -EFAULT;
+			}
+			break;
+
 		default:
 			return -EINVAL;
 	}

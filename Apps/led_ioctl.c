@@ -31,11 +31,11 @@ int main(int argc, char *argv[])
 
 	do
 	{
-		printf("1: Open\n");
-		printf("2: Get LED Status\n");
-		printf("3: Set LED Status\n");
-		printf("4: Set LED Number\n");
-		printf("5: Close\n");
+		printf("1: Open\t");
+		printf("2: Get LED Status\t");
+		printf("3: Set LED Status\t");
+		printf("4: Set LED Number\t");
+		printf("5: Close\t");
 		printf("0: Exit\n");
 		printf("Enter choice: ");
 		scanf("%d", &choice);

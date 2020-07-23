@@ -29,10 +29,10 @@ int main(int argc, char *argv[])
 
 	do
 	{
-		printf("1: Open\n");
-		printf("2: Get LED Status\n");
-		printf("3: Set LED Status\n");
-		printf("4: Close\n");
+		printf("1: Open\t");
+		printf("2: Get LED Status\t");
+		printf("3: Set LED Status\t");
+		printf("4: Close\t");
 		printf("0: Exit\n");
 		printf("Enter choice: ");
 		scanf("%d", &choice);
@@ -73,6 +73,7 @@ int main(int argc, char *argv[])
 				}
 				printf("Enter your choice [0 - Turn Off, 1- Turn On] :\n");
 				c = getchar();
+				c -= '0';  //so c will be integer 0 or 1
 				cnt = write( fd, &c, 1 );
 				if (cnt == -1)
 				{

@@ -36,14 +36,14 @@ int main(int argc, char *argv[])
 
 	do
 	{
-		printf("1: Open\n");
-		printf("2: Read\n");
-		printf("3: Write\n");
-		printf("4: Close\n");
-		printf("5: Seek\n");
+		printf("1: Open\t");
+		printf("2: Read\t");
+		printf("3: Write\t");
+		printf("4: Close\t");
+		printf("5: Seek\t");
 #ifdef MEM_IOCTL
-		printf("6: Store Size Set\n");
-		printf("7: Store Size Get\n");
+		printf("6: Store Size Set\t");
+		printf("7: Store Size Get\t");
 #endif
 		printf("0: Exit\n");
 		printf("Enter choice: ");

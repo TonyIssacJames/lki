@@ -13,30 +13,15 @@
 #include <linux/proc_fs.h>
 
 #define FIRST_MINOR 0
-#define MINOR_CNT 3
+#define MINOR_CNT 1
 
 struct proc_dir_entry *my_proc_file;
-char flag = '0';
+char flag = 'n';
 static dev_t dev;
-static struct cdev c_dev[MINOR_CNT];
+static struct cdev c_dev;
 static struct class *cl;
 static struct task_struct *sleeping_task;
 static DECLARE_WAIT_QUEUE_HEAD(wq);  //create the wait queue
-static struct task_struct *thread_st[MINOR_CNT];
-static char wake_up_code[MINOR_CNT] = {'1'};
-
-
-static int thread_fn(void *wake_up_code)
-{
-	char ch = *(char *)(wake_up_code);
-	printk("Going to sleep thread_f%c\n",ch);
-	wait_event_interruptible(wq, flag == ch);
-	printk(KERN_INFO "Woken Up thread%c flag = %c\n",ch, flag);
-	flag = '0';
-	printk("Woken Up\n");
-	thread_st[0] = NULL;
-    do_exit(0);
-}
 
 int open(struct inode *inode, struct file *filp)
 {
@@ -53,16 +38,14 @@ int release(struct inode *inode, struct file *filp)
 
 ssize_t read(struct file *filp, char *buff, size_t count, loff_t *offp) 
 {
-	int idx = iminor(filp->f_path.dentry->d_inode); //to get minor number from file descriptor
-
 	printk("Inside read \n");
 	printk("Scheduling Out\n");
 	//TODO 1: Set the task state to TASK_INTERRUPTIBLE
-	wake_up_code[idx] = '1' + (char)idx; //to set wake_up_code = '1', '2', '3'
-	thread_st[idx] = kthread_run(thread_fn, &wake_up_code[idx], "mythread%c",wake_up_code[idx]);
-
-	ssleep(10);//sleep for 2 minutes
-	printk(KERN_INFO "Main thread is finished\n");
+	//set_current_state(TASK_INTERRUPTIBLE);
+	//schedule();
+	wait_event_interruptible(wq, flag == 'y');
+	flag = 'n';
+	printk(KERN_INFO "Woken Up flag = %c\n",flag);
 	return 0;
 }
 
@@ -76,18 +59,17 @@ int write_proc(struct file *file,const char *buffer, size_t count, loff_t *off)
 	int ret = 0;
 	printk(KERN_INFO "procfile_write /proc/wait called\n");
 	ret = __get_user(flag,buffer);
-	printk(KERN_INFO "input is %c\n",flag);
-
-	//TODO 2: Wake up the thread
-	if((flag == '1')||(flag == '2')||(flag == '3'))
-	{   /*if flag is 1,2, 3 wake up the corresponding thread*/
-		printk("Sleeping Process%c will be woken up %c\n",flag, flag);
+	printk(KERN_INFO "%c\n",flag);
+	//TODO 2: Wake up the sleeping process
+	if(flag == 'y')
+	{
+		printk("Sleeping process will be woken up %c\n",flag);
 		//wake_up_process(sleeping_task);
 		wake_up_interruptible(&wq); //wakeup one interruptable taks
 	}
 	else
 	{
-		printk("All process continues to sleep %c\n",flag);
+		printk("Sleeping continues %c\n",flag);
 	}
 	return count;
 }
@@ -114,49 +96,33 @@ static int create_new_proc_entry(void)
 
 int schd_init (void) 
 {
-	int i, j;
-	dev_t my_device;
-	
 	if (alloc_chrdev_region(&dev, FIRST_MINOR, MINOR_CNT, "SCD") < 0)
 	{
 		return -1;
 	}
 	printk("Major Nr: %d\n", MAJOR(dev));
 
+	cdev_init(&c_dev, &pra_fops);
+
+	if (cdev_add(&c_dev, dev, MINOR_CNT) == -1)
+	{
+		unregister_chrdev_region(dev, MINOR_CNT);
+		return -1; 
+	}
+
 	if ((cl = class_create(THIS_MODULE, "chardrv")) == NULL)
 	{
+		cdev_del(&c_dev);
 		unregister_chrdev_region(dev, MINOR_CNT);
 		return -1;
 	}
-	
-	for(i=0; i<MINOR_CNT; i++)
+	if (IS_ERR(device_create(cl, NULL, dev, NULL, "mychar%d", 0)))
 	{
-		cdev_init(&c_dev[i], &pra_fops);
-
-		my_device = MKDEV(MAJOR(dev), i);
-		
-		if (cdev_add(&c_dev[i], my_device, 1) == -1)
-		{
-			class_destroy(cl);
-			for(j=i-1; j>=0;j--)
-			{
-				cdev_del(&c_dev[i]);
-			}
-			unregister_chrdev_region(dev, MINOR_CNT);
-			return -1; 
-		}
-		
-		if (IS_ERR(device_create(cl, NULL, my_device, NULL, "mychar%d", i)))
-		{
-			class_destroy(cl);
-			for(j=i; j>=0;j--)
-			{
-				cdev_del(&c_dev[i]);
-			}
-			unregister_chrdev_region(dev, MINOR_CNT);
-			return -1;
-		}
-	}//for(i=0; i<MINOR_CNT; i++)
+		class_destroy(cl);
+		cdev_del(&c_dev);
+		unregister_chrdev_region(dev, MINOR_CNT);
+		return -1;
+	}
 
 	create_new_proc_entry();
 	return 0;
@@ -165,32 +131,12 @@ int schd_init (void)
 
 void schd_cleanup(void) 
 {
-	int i;
-	dev_t my_device;
-	
 	printk(KERN_INFO " Inside cleanup_module\n");
 	remove_proc_entry("wait",NULL);
-	
-	for(i=0; i<MINOR_CNT; i++)
-	{	
-		my_device = MKDEV(MAJOR(dev), i);
-		cdev_del(&c_dev[i]);
-		device_destroy(cl, my_device);
-	}
-	
+	device_destroy(cl, dev);
 	class_destroy(cl);
+	cdev_del(&c_dev);
 	unregister_chrdev_region(dev, MINOR_CNT);
-	
-	printk("Cleaning Up threads\n");
-	
-	for(i=0; i<MINOR_CNT; i++)
-	{
-		if (thread_st[i] != NULL)
-		{
-			kthread_stop(thread_st[i]);
-			printk(KERN_INFO "Thread %d stopped\n",i);
-		}
-	}
 }
 
 module_init(schd_init);

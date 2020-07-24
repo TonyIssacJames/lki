@@ -22,19 +22,20 @@ static struct cdev c_dev[MINOR_CNT];
 static struct class *cl;
 static struct task_struct *sleeping_task;
 static DECLARE_WAIT_QUEUE_HEAD(wq);  //create the wait queue
-static struct task_struct *thread_st[MINOR_CNT];
+static struct task_struct *thread_st[MINOR_CNT] = {NULL};
 static char wake_up_code[MINOR_CNT] = {'1'};
 
 
-static int thread_fn(void *wake_up_code)
+static int thread_fn(void *used)
 {
-	char ch = *(char *)(wake_up_code);
+	int idx = *(int *)used;
+	char ch = wake_up_code[idx];
 	printk("Going to sleep thread_f%c\n",ch);
 	wait_event_interruptible(wq, flag == ch);
 	printk(KERN_INFO "Woken Up thread%c flag = %c\n",ch, flag);
 	flag = '0';
 	printk("Woken Up\n");
-	thread_st[0] = NULL;
+	thread_st[idx] = NULL;
     do_exit(0);
 }
 
@@ -58,8 +59,8 @@ ssize_t read(struct file *filp, char *buff, size_t count, loff_t *offp)
 	printk("Inside read \n");
 	printk("Scheduling Out\n");
 	//TODO 1: Set the task state to TASK_INTERRUPTIBLE
-	wake_up_code[idx] = '1' + (char)idx; //to set wake_up_code = '1', '2', '3'
-	thread_st[idx] = kthread_run(thread_fn, &wake_up_code[idx], "mythread%c",wake_up_code[idx]);
+	
+	thread_st[idx] = kthread_run(thread_fn, &idx, "mythread%c",wake_up_code[idx]);
 
 	ssleep(10);//sleep for 2 minutes
 	printk(KERN_INFO "Main thread is finished\n");
@@ -159,6 +160,13 @@ int schd_init (void)
 	}//for(i=0; i<MINOR_CNT; i++)
 
 	create_new_proc_entry();
+	
+	
+	/*static structure init*/
+	for(i=0; i<MINOR_CNT; i++)
+	{
+		wake_up_code[i] = '1' + (char)i; //to set wake_up_code = '1', '2', '3'
+	}
 	return 0;
 }
 

@@ -15,6 +15,12 @@
 #define FIRST_MINOR 0
 #define MINOR_CNT 3
 
+typedef struct _dev_data{
+	unsigned int minor;
+	char wake_up_code;
+	unsigned int count;
+} dev_data;
+
 struct proc_dir_entry *my_proc_file;
 char flag = '0';
 static dev_t dev;
@@ -23,16 +29,17 @@ static struct class *cl;
 static struct task_struct *sleeping_task;
 static DECLARE_WAIT_QUEUE_HEAD(wq);  //create the wait queue
 static struct task_struct *thread_st[MINOR_CNT] = {NULL};
-static char wake_up_code[MINOR_CNT] = {'1'};
-
+static dev_data pvt_data[MINOR_CNT];
 
 static int thread_fn(void *used)
 {
-	int idx = *(int *)used;
-	char ch = wake_up_code[idx];
-	printk("Going to sleep thread_f%c\n",ch);
-	wait_event_interruptible(wq, flag == ch);
-	printk(KERN_INFO "Woken Up thread%c flag = %c\n",ch, flag);
+	dev_data *pvt_data = ((dev_data *)(used));
+	char wake_up_code = pvt_data->wake_up_code; //get the wake up code
+	unsigned int idx = pvt_data->minor;
+	
+	printk("Going to sleep thread_f%c\n",wake_up_code);
+	wait_event_interruptible(wq, flag == wake_up_code);
+	printk(KERN_INFO "Woken Up thread%c flag = %c\n",wake_up_code, flag);
 	flag = '0';
 	printk("Woken Up\n");
 	thread_st[idx] = NULL;
@@ -41,28 +48,48 @@ static int thread_fn(void *used)
 
 int open(struct inode *inode, struct file *filp)
 {
+	unsigned int idx;
 	printk(KERN_INFO "Inside open \n");
 	sleeping_task = current;
+	
+	idx = iminor(inode);
+	if(pvt_data[idx].count != 0) //do not allow more than on instance to work
+	{
+		printk(KERN_INFO "Driver in USE \n");
+		return -1;
+	}
+	pvt_data[idx].minor = idx;
+	pvt_data[idx].count += 1;
+
+	filp->private_data = (void*)&pvt_data[idx];
+
 	return 0;
 }
 
 int release(struct inode *inode, struct file *filp) 
 {
+	unsigned int idx;
+	
 	printk (KERN_INFO "Inside close \n");
+	idx = iminor(inode);
+	pvt_data[idx].count -= 1; //reduce count as instance is free
+
 	return 0;
 }
 
 ssize_t read(struct file *filp, char *buff, size_t count, loff_t *offp) 
 {
-	int idx = iminor(filp->f_path.dentry->d_inode); //to get minor number from file descriptor
+	dev_data *pvt_data = ((dev_data *)(filp->private_data));
+	char wake_up_code = pvt_data->wake_up_code; //get the wake up code
+	unsigned int idx = pvt_data->minor;
 
 	printk("Inside read \n");
 	printk("Scheduling Out\n");
 	//TODO 1: Set the task state to TASK_INTERRUPTIBLE
 	
-	thread_st[idx] = kthread_run(thread_fn, &idx, "mythread%c",wake_up_code[idx]);
+	thread_st[idx] = kthread_run(thread_fn, (void*)pvt_data, "mythread%c",wake_up_code);
 
-	ssleep(10);//sleep for 2 minutes
+	ssleep(1);//sleep for 1 sec
 	printk(KERN_INFO "Main thread is finished\n");
 	return 0;
 }
@@ -80,9 +107,9 @@ int write_proc(struct file *file,const char *buffer, size_t count, loff_t *off)
 	printk(KERN_INFO "input is %c\n",flag);
 
 	//TODO 2: Wake up the thread
-	if((flag == '1')||(flag == '2')||(flag == '3'))
+	if((flag >= '1')&& (flag <= '3'))
 	{   /*if flag is 1,2, 3 wake up the corresponding thread*/
-		printk("Sleeping Process%c will be woken up %c\n",flag, flag);
+		printk("Sleeping Process %c will be woken up %c\n",flag, flag);
 		//wake_up_process(sleeping_task);
 		wake_up_interruptible(&wq); //wakeup one interruptable taks
 	}
@@ -113,6 +140,19 @@ static int create_new_proc_entry(void)
 	return 0;
 }
 
+static int init_pvt_data(dev_data *pvt_data)
+{
+	int i;
+	/*static structure init*/
+	for(i=0; i<MINOR_CNT; i++)
+	{
+		pvt_data[i].minor = 0xFFFFFFFF; //initally uninit
+		pvt_data[i].wake_up_code = '1' + (char)i; // '1', '2', '3' for wake up call
+		pvt_data[i].count = 0; //to keep track of acces
+	}
+	
+	return 0;
+}
 int schd_init (void) 
 {
 	int i, j;
@@ -163,10 +203,8 @@ int schd_init (void)
 	
 	
 	/*static structure init*/
-	for(i=0; i<MINOR_CNT; i++)
-	{
-		wake_up_code[i] = '1' + (char)i; //to set wake_up_code = '1', '2', '3'
-	}
+	init_pvt_data(pvt_data);
+	
 	return 0;
 }
 
